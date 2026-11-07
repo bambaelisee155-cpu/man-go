@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1E5C40">
+<meta name="description" content="Man-Go : taxis communaux et tricycles de Man et de sa région.">
+<title>Man-Go</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Mono:wght@500&family=DM+Sans:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Mise en page : une colonne mobile unique, en-tête collant avec quatre espaces (passager, chauffeur, tarifs, lancement).
+   Couleurs : latérite de Man pour l'action, vert forêt pour l'arrivée et l'état "en ligne", jaune mangue pour les véhicules et les notes. */
+:root{
+  --f-display:'Bricolage Grotesque','Trebuchet MS',system-ui,sans-serif;
+  --f-body:'DM Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --f-mono:'DM Mono',ui-monospace,Menlo,Consolas,monospace;
+  --bg:#EBEFE8; --surface:#FBFCFA; --surface-2:#F0F3EE; --ink:#15201A; --muted:#566559; --line:#D3DACF;
+  --accent:#C2461B; --on-accent:#FFFFFF; --forest:#1E5C40; --forest-soft:#DDEBE2; --sun:#E3A312; --err:#B3261E;
+  --map:#E0E8DB; --road:#F6F8F3; --hill:#B9CDBE; --dot:#6B7D70;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1612; --surface:#17201B; --surface-2:#1D2822; --ink:#E7EEE8; --muted:#9AAA9F; --line:#2B3830;
+    --accent:#EE7A47; --on-accent:#1B0D06; --forest:#7CCBA3; --forest-soft:#1D3A2B; --sun:#F2C14E; --err:#F2766E;
+    --map:#14201A; --road:#243229; --hill:#2A4033; --dot:#7E9185; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1612; --surface:#17201B; --surface-2:#1D2822; --ink:#E7EEE8; --muted:#9AAA9F; --line:#2B3830;
+  --accent:#EE7A47; --on-accent:#1B0D06; --forest:#7CCBA3; --forest-soft:#1D3A2B; --sun:#F2C14E; --err:#F2766E;
+  --map:#14201A; --road:#243229; --hill:#2A4033; --dot:#7E9185; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);color:var(--ink);font:400 15px/1.5 var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:0 40px;
+}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.shell{max-width:460px;margin:0 auto}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+
+header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--bg);padding:12px 0 10px;display:flex;flex-direction:column;gap:10px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand h1{font:800 24px/1 var(--f-display);margin:0;letter-spacing:-.01em}
+.brand p{margin:2px 0 0;color:var(--muted);font-size:13px}
+.brand .pill{margin-left:auto}
+.pill{font:700 11px/1 var(--f-body);letter-spacing:.06em;text-transform:uppercase;padding:6px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:var(--surface)}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
+.tab{min-height:44px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:700 13px var(--f-body);cursor:pointer;padding:0 2px}
+.tab[aria-selected=true]{background:var(--ink);color:var(--bg)}
+
+.stack{display:flex;flex-direction:column;gap:14px;padding-top:6px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;min-width:0}
+.card.flat{background:var(--surface-2);border-radius:14px;padding:12px}
+h2{font:800 22px/1.15 var(--f-display);margin:0 0 8px;text-wrap:balance}
+h3{font:800 17px/1.2 var(--f-display);margin:0 0 6px;text-wrap:balance}
+p{margin:0 0 8px}
+.eyebrow{font:700 12px/1 var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin:0 0 8px}
+.fine{color:var(--muted);font-size:13px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+.map{display:block;width:100%;height:auto;border-radius:14px;background:var(--map);border:1px solid var(--line)}
+.map .lbl{font:700 9.5px var(--f-body);fill:var(--ink);paint-order:stroke;stroke:var(--map);stroke-width:3px}
+.cap{margin:6px 2px 0;color:var(--muted);font-size:12px}
+
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field label,.lab{font:700 13px/1.2 var(--f-body)}
+.inp{width:100%;min-height:48px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);border-radius:12px;padding:0 12px;font:500 16px var(--f-body)}
+textarea.inp{min-height:180px;padding:10px 12px;resize:vertical;line-height:1.5}
+.inp.num{font-family:var(--f-mono);min-width:96px}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row>*{flex:1 1 140px;min-width:0}
+.form{display:flex;flex-direction:column;gap:14px}
+
+.svcs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.svc{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px;min-height:88px;border:1.5px solid var(--line);background:var(--surface-2);color:var(--ink);border-radius:12px;font:inherit;text-align:left;cursor:pointer;min-width:0}
+.svc svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;margin-bottom:4px}
+.svc b{font:700 14px/1.15 var(--f-body)}
+.svc small{color:var(--muted);font-size:12px}
+.svc[aria-pressed=true]{border-color:var(--accent);background:var(--surface);box-shadow:inset 0 0 0 1px var(--accent)}
+.svc[aria-pressed=true] svg{stroke:var(--accent)}
+
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{min-height:40px;padding:0 14px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface-2);color:var(--ink);font:600 14px var(--f-body);cursor:pointer}
+.chip[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+
+.stepper{display:flex;align-items:center;gap:12px}
+.stepper button{width:44px;height:44px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface-2);color:var(--ink);font:700 20px var(--f-body);cursor:pointer}
+.stepper output{min-width:28px;text-align:center;font:500 20px var(--f-mono)}
+
+.fare{display:flex;align-items:baseline;justify-content:space-between;gap:4px 12px;flex-wrap:wrap;padding:14px;border-radius:14px;background:var(--forest-soft)}
+.fare span{font-weight:600}
+.fare strong{font:500 28px/1 var(--f-mono);font-variant-numeric:tabular-nums}
+.fare small{flex-basis:100%;color:var(--muted);font-size:12px}
+.old{text-decoration:line-through;color:var(--muted);font:500 14px var(--f-mono)}
+
+.btn{display:inline-flex;justify-content:center;align-items:center;min-height:52px;padding:0 20px;border-radius:14px;border:0;font:800 16px var(--f-display);cursor:pointer;width:100%;text-align:center}
+.btn.primary{background:var(--accent);color:var(--on-accent)}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.btn.forest{background:var(--forest);color:var(--surface)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.small{min-height:44px;width:auto;font-size:15px;padding:0 16px}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btns .btn{flex:1 1 120px}
+
+.steps{list-style:none;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:0;padding:0}
+.steps li{font-size:12px;font-weight:700;color:var(--muted);padding-top:8px;border-top:4px solid var(--line)}
+.steps li.done{border-color:var(--forest);color:var(--forest)}
+.steps li.cur{border-color:var(--accent);color:var(--ink)}
+
+.spin{width:26px;height:26px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--accent);animation:sp 1s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.stat{display:flex;gap:12px;align-items:center}
+.stat h2{margin:0}
+
+.drv{display:flex;gap:12px;align-items:center}
+.ava{flex:none;width:48px;height:48px;border-radius:50%;background:var(--forest-soft);color:var(--forest);display:grid;place-items:center;font:800 17px var(--f-display)}
+.drv-t{display:flex;flex-direction:column;min-width:0}
+.drv-t span{color:var(--muted);font-size:13px}
+.tag{margin-left:auto;font:700 11px/1 var(--f-body);letter-spacing:.05em;text-transform:uppercase;padding:5px 8px;border-radius:999px;background:var(--surface-2);color:var(--muted);border:1px solid var(--line);flex:none}
+.tag.hot{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+
+.near{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.near li{display:flex;gap:10px;align-items:center}
+.near .ava{width:38px;height:38px;font-size:14px}
+.near .t{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.3}
+.near .t span{color:var(--muted);font-size:12px}
+.near .d{font:500 13px var(--f-mono);text-align:right;white-space:nowrap}
+.gpsrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+.code{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px;border-radius:14px;border:1.5px dashed var(--accent)}
+.code strong{font:500 34px/1 var(--f-mono);letter-spacing:.16em}
+.code p{flex-basis:100%;margin:0;color:var(--muted);font-size:13px}
+
+dl.sum{margin:0;display:grid;gap:8px}
+dl.sum div{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding-bottom:8px}
+dl.sum div:last-child{border-bottom:0;padding-bottom:0}
+dl.sum dt{color:var(--muted)}
+dl.sum dd{margin:0;font-weight:700;text-align:right;min-width:0}
+
+.stars{display:flex;gap:4px}
+.stars button{width:44px;height:44px;border:0;background:transparent;font-size:30px;line-height:1;color:var(--line);cursor:pointer}
+.stars button[aria-pressed=true]{color:var(--sun)}
+
+.switch{display:flex;align-items:center;gap:12px;min-height:52px;padding:6px 18px 6px 6px;border-radius:999px;border:1.5px solid var(--line);background:var(--surface-2);color:var(--ink);font:800 16px var(--f-display);cursor:pointer}
+.switch .knob{width:40px;height:40px;border-radius:50%;background:var(--muted)}
+.switch[aria-checked=true]{background:var(--forest-soft);border-color:var(--forest)}
+.switch[aria-checked=true] .knob{background:var(--forest)}
+.switch:disabled{opacity:.5;cursor:not-allowed}
+.top-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+
+.earn{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.earn div{background:var(--surface-2);border-radius:12px;padding:12px}
+.earn span{display:block;color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.earn strong{display:block;font:500 22px/1.3 var(--f-mono);font-variant-numeric:tabular-nums}
+
+.req{display:flex;flex-direction:column;gap:10px}
+.req .rt{font:800 17px/1.2 var(--f-display)}
+.req .meta{color:var(--muted);font-size:13px}
+.req .price{font:500 22px var(--f-mono);font-variant-numeric:tabular-nums}
+.req .head{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+
+.notice{padding:12px 14px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
+.err{color:var(--err);font-weight:600;margin:0}
+
+.goals{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0 8px}
+.goals div{background:var(--surface-2);border-radius:12px;padding:10px}
+.goals strong{display:block;font:500 26px/1.1 var(--f-mono)}
+.goals span{font-size:12px;color:var(--muted);line-height:1.3;display:block}
+
+details.acc{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:0 16px}
+details.acc summary{list-style:none;cursor:pointer;min-height:56px;display:flex;align-items:center;justify-content:space-between;gap:12px;font:800 17px/1.2 var(--f-display)}
+details.acc summary::-webkit-details-marker{display:none}
+details.acc summary::after{content:"+";font:500 22px var(--f-mono);color:var(--accent)}
+details.acc[open] summary::after{content:"\2212"}
+details.acc .in{padding:0 0 16px}
+details.acc ul,details.acc ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
+.tbl{overflow-x:auto}
+.tbl table{border-collapse:collapse;width:100%;min-width:380px;font-size:13px}
+.tbl th,.tbl td{text-align:left;vertical-align:middle;padding:8px 10px 8px 0;border-bottom:1px solid var(--line)}
+.tbl th{font-weight:700;color:var(--muted)}
+.badge{display:inline-block;font:700 11px/1 var(--f-body);letter-spacing:.05em;text-transform:uppercase;padding:4px 7px;border-radius:6px;background:var(--sun);color:#1B1405;margin-right:6px;vertical-align:1px}
+
+html,body{margin:0}
+.mapbox{position:relative;z-index:0;isolation:isolate;height:300px;border-radius:14px;border:1px solid var(--line);overflow:hidden;background:var(--map)}
+.mapbox.leaflet-container{font-family:var(--f-body)}
+.gdot{width:18px;height:18px;border-radius:50%;background:#2a6fdb;border:3px solid #fff;box-shadow:0 0 0 2px rgba(42,111,219,.35)}
+.pin{width:20px;height:20px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--accent);border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.veh{width:16px;height:16px;border-radius:4px;background:var(--sun);border:2px solid #15201A}
+textarea.rep{min-height:150px;font:500 12px/1.4 var(--f-mono)}
+</style>
+</head>
+<body>
+<noscript>Man-Go a besoin de JavaScript pour fonctionner.</noscript>
+<div class="shell"><div id="app"></div></div>
+<div id="live" class="sr" aria-live="polite"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+'use strict';
+
+/* Centre de Man : 7°24' N, 7°33' O (Wikipédia). Sert seulement de point de départ de la carte tant que le GPS n'a pas répondu. */
+var MAN={lat:7.40,lon:-7.55};
+
+/* ---------- Réglages (modifiables dans l'onglet Réglages) ---------- */
+/* Seuls Gbêpleu et Kennedy figurent dans une source consultée. Le reste est à vérifier avec des habitants de Man. */
+var DEF_Q=['Gare routière','Marché','CHR de Man','Libreville','Air France','Dioulabougou','Kennedy','Gbêpleu','Cascade de Man','Dent de Man'];
+/* Tarifs habituels depuis Man : ESTIMATIONS de départ, aucune source fiable trouvée. À remplacer par les prix réels des chauffeurs. */
+var DEF_T=[['Logoualé',1500],['Biankouma',3000],['Facobly',3000],['Danané',4000],['Duékoué',4000],['Guiglo',5000],['Bangolo',5000],['Touba',6500],['Sipilou',4000]];
+
+function defCfg(){return {q:DEF_Q.slice(),t:DEF_T.map(function(x){return {n:x[0],u:x[1]}}),city:500,red:500}}
+function loadCfg(){
+  try{
+    var c=JSON.parse(localStorage.getItem('mango_cfg')||'null');
+    if(c&&Array.isArray(c.q)&&c.q.length>1&&Array.isArray(c.t)&&c.t.length)return c;
+  }catch(e){}
+  return defCfg();
+}
+function saveCfg(){try{localStorage.setItem('mango_cfg',JSON.stringify(CFG))}catch(e){}}
+function load(){try{return JSON.parse(localStorage.getItem('mango_reg')||'null')}catch(e){return null}}
+function save(v){try{localStorage.setItem('mango_reg',JSON.stringify(v))}catch(e){}}
+
+var CFG=loadCfg();
+var P={},INTER={};
+function slug(s){return String(s).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')||'x'}
+function rebuild(){
+  P={};INTER={};
+  CFG.q.forEach(function(n){var k=slug(n);if(!P[k])P[k]={n:n}});
+  CFG.t.forEach(function(t){
+    var k=slug(t.n);if(INTER[k])return;
+    INTER[k]={n:t.n,usual:t.u,fare:Math.max(500,t.u-CFG.red)};
+  });
+}
+rebuild();
+
+var PAY={cash:'Espèces',wave:'Wave',om:'Orange Money',mtn:'MTN MoMo'};
+var SVC={taxi:'Taxi communal',tri:'Tricycle',inter:'Hors ville'};
+var DRV=[
+  {name:'Moussa Traoré',svc:'taxi',rate:4.8,trips:312},
+  {name:'Daouda Koné',svc:'taxi',rate:4.7,trips:189},
+  {name:'Emmanuel Gnahoré',svc:'taxi',rate:4.9,trips:421},
+  {name:'Yves Kouadio',svc:'taxi',rate:4.5,trips:64},
+  {name:'Séraphin Zadi',svc:'tri',rate:4.8,trips:156},
+  {name:'Ibrahim Ouattara',svc:'tri',rate:4.6,trips:98},
+  {name:'Lassina Diomandé',svc:'tri',rate:4.7,trips:71}
+];
+var NAMES=['Awa','Marie-Claire','Yao','Fatoumata','Serge','Nadège','Kader','Estelle'];
+
+var S={tab:'passager',svc:'taxi',from:'',to:'',pax:1,pay:'cash',ride:null,
+  gps:null,pin:null,pickMode:'gps',geoState:'idle',geoMsg:'',perm:'unknown',centre:{lat:MAN.lat,lon:MAN.lon},fleet:[],
+  online:false,requests:[],job:null,earn:{t:0,n:0},reg:load(),form:{rv:'taxi'},regErr:'',townErr:'',notice:'',codeErr:false,
+  installEv:null,installed:false,reportText:'',copied:''};
+var uid=0,T=null,IV=null,WATCH=null,lastR=0,MAP=null,mapEl=null,layers={},mapReady=false;
+
+function $(s){return document.querySelector(s)}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function fmt(n){return String(n).replace(/\B(?=(\d{3})+(?!\d))/g,' ')+' FCFA'}
+function rnd(a,b){return Math.floor(Math.random()*(b-a+1))+a}
+function pick(a){return a[rnd(0,a.length-1)]}
+function r50(n){return Math.round(n/50)*50}
+function num(v){var n=parseInt(String(v).replace(/\D/g,''),10);return isNaN(n)?0:n}
+function announce(m){var l=$('#live');if(l)l.textContent=m}
+function opt(v,l,sel){return '<option value="'+v+'"'+(v===sel?' selected':'')+'>'+esc(l)+'</option>'}
+function maxPax(){return S.svc==='tri'?3:4}
+function placeName(svc,k){return svc==='inter'?(INTER[k]?INTER[k].n:k):(P[k]?P[k].n:k)}
+function ini(n){return n.split(/\s+/).map(function(w){return w.charAt(0).toUpperCase()}).slice(0,2).join('')}
+function pad2(n){return (n<10?'0':'')+n}
+
+function fare(svc,to){
+  if(svc==='inter')return INTER[to]?INTER[to].fare:0;
+  return P[to]?CFG.city:0;
+}
+function fixFrom(){if(!P[S.from])S.from=Object.keys(P)[0]}
+function fixTo(){
+  if(S.svc==='inter'){if(!INTER[S.to])S.to=Object.keys(INTER)[0]}
+  else if(!P[S.to]||S.to===S.from){S.to=Object.keys(P).filter(function(k){return k!==S.from})[0]}
+}
+fixFrom();S.to=Object.keys(P)[1];fixTo();
+
+/* ---------- Géométrie ---------- */
+function hav(a,b){
+  var R=6371000,r=Math.PI/180,dl=(b.lat-a.lat)*r,dn=(b.lon-a.lon)*r;
+  var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dn/2)*Math.sin(dn/2);
+  return 2*R*Math.asin(Math.sqrt(x));
+}
+function offset(c,m,brg){
+  var r=Math.PI/180;
+  return {lat:c.lat+m*Math.cos(brg)/111320,lon:c.lon+m*Math.sin(brg)/(111320*Math.cos(c.lat*r))};
+}
+function distLabel(m){
+  if(m<100)return 'moins de 100 m';
+  if(m<1000)return r50(m)+' m';
+  return (m/1000).toFixed(1).replace('.',',')+' km';
+}
+
+/* ---------- Départ et véhicules à proximité ---------- */
+function pickup(){
+  if(S.pickMode==='pin'&&S.pin)return {lat:S.pin.lat,lon:S.pin.lon,label:'Point choisi sur la carte',kind:'pin'};
+  if(S.gps)return {lat:S.gps.lat,lon:S.gps.lon,label:'Ma position (GPS)',kind:'gps',acc:S.gps.acc};
+  return null;
+}
+/* Véhicules de DÉMONSTRATION placés autour du point de départ. Il n'existe pas encore de vrais chauffeurs connectés. */
+function makeFleet(){
+  S.fleet=DRV.map(function(d){
+    var pos=offset(S.centre,rnd(150,1800),Math.random()*Math.PI*2);
+    return {name:d.name,svc:d.svc,veh:d.svc==='tri'?'Tricycle':'Taxi communal',rate:d.rate,trips:d.trips,ini:ini(d.name),plate:'0000 AB 00',ex:true,lat:pos.lat,lon:pos.lon};
+  });
+}
+function nearby(svc){
+  var ref=pickup()||S.centre,want=svc==='tri'?'tri':'taxi';
+  return S.fleet.filter(function(v){return v.svc===want}).map(function(v){
+    var m=hav(ref,v);
+    return {v:v,m:m,eta:Math.max(1,Math.ceil(m/333)+1)};
+  }).sort(function(a,b){return a.m-b.m}).slice(0,3);
+}
+function me(svc){
+  var r=S.reg,nm=r?r.name:'Chauffeur démo';
+  var veh=r?(r.veh==='tri'?'Tricycle':'Taxi communal'):(svc==='tri'?'Tricycle':'Taxi communal');
+  return {name:nm,veh:veh,rate:null,trips:0,ini:ini(nm),plate:r&&r.plate?r.plate:'',ex:false};
+}
+function demoReq(){
+  var svc=pick(['taxi','tri','taxi','inter']),keys=Object.keys(P),from=pick(keys),to;
+  if(svc==='inter')to=pick(Object.keys(INTER));
+  else{do{to=pick(keys)}while(to===from&&keys.length>1)}
+  return {id:'d'+(++uid),svc:svc,from:from,to:to,fromN:P[from].n,toN:placeName(svc,to),pax:rnd(1,svc==='tri'?3:4),
+    pay:pick(['cash','wave','om','mtn','cash']),fare:fare(svc,to),name:pick(NAMES),dist:rnd(2,15)*100,src:'demo'};
+}
+
+/* ---------- GPS ---------- */
+var GEO_TXT={idle:'Pas encore activé',asking:'Recherche en cours',ok:'Position reçue',denied:'Autorisation refusée',nopos:'Position indisponible',timeout:'Délai dépassé',insecure:'Page non sécurisée',unsupported:'Non pris en charge'};
+function permLabel(){return {granted:'Accordée',denied:'Refusée',prompt:'À demander'}[S.perm]||'Inconnue'}
+function accLabel(a){return a<=30?'Bonne':a<=100?'Moyenne':'Faible'}
+function geoRender(force){
+  var n=Date.now();
+  if(force||n-lastR>3000){lastR=n;softRender()}else drawMap();
+}
+function onFix(p){
+  var first=!S.gps;
+  S.gps={lat:p.coords.latitude,lon:p.coords.longitude,acc:Math.round(p.coords.accuracy),ts:p.timestamp,speed:p.coords.speed,heading:p.coords.heading};
+  S.geoState='ok';S.geoMsg='';S.perm='granted';
+  if(first){S.centre={lat:S.gps.lat,lon:S.gps.lon};if(!S.ride)makeFleet()}
+  geoRender(first);
+  if(first)fitView();
+}
+function onErr(e){
+  var c=e&&e.code;
+  if(c===1){
+    S.geoState='denied';S.perm='denied';WATCH=null;
+    S.geoMsg='Le navigateur n’a pas la permission d’utiliser votre position. Sous Chrome, touchez le cadenas à gauche de l’adresse, puis Autorisations, puis Position : Autoriser. Rechargez ensuite la page.';
+  }else if(c===3){
+    S.geoState='timeout';
+    S.geoMsg='Le téléphone met trop de temps à trouver votre position. Sortez à l’air libre et attendez quelques secondes.';
+  }else{
+    S.geoState='nopos';
+    S.geoMsg='Position indisponible. Vérifiez que la localisation (GPS) du téléphone est activée dans les réglages Android.';
+  }
+  geoRender(true);
+}
+function startGeo(){
+  if(!window.isSecureContext){S.geoState='insecure';S.geoMsg='Le GPS ne fonctionne que sur une adresse qui commence par https://. Ouvrez le site depuis son adresse en ligne.';render();return}
+  if(!('geolocation' in navigator)){S.geoState='unsupported';S.geoMsg='Ce navigateur ne sait pas donner la position. Essayez avec Chrome.';render();return}
+  stopGeo(true);
+  S.geoState='asking';S.geoMsg='';render();
+  try{WATCH=navigator.geolocation.watchPosition(onFix,onErr,{enableHighAccuracy:true,timeout:20000,maximumAge:0})}
+  catch(e){onErr({code:2})}
+}
+function stopGeo(silent){
+  if(WATCH!==null){try{navigator.geolocation.clearWatch(WATCH)}catch(e){}WATCH=null}
+  if(!silent){S.geoState='idle';S.geoMsg='GPS arrêté.';render()}
+}
+function watchPerm(){
+  try{
+    if(navigator.permissions&&navigator.permissions.query){
+      navigator.permissions.query({name:'geolocation'}).then(function(p){
+        S.perm=p.state;
+        p.onchange=function(){S.perm=p.state;softRender()};
+        softRender();
+      }).catch(function(){});
+    }
+  }catch(e){}
+}
+function report(){
+  var g=S.gps;
+  return ['Rapport de test Man-Go',
+    'Date : '+new Date().toLocaleString('fr-FR'),
+    'Adresse sécurisée (https) : '+(window.isSecureContext?'oui':'non'),
+    'Autorisation : '+permLabel(),
+    'État : '+(GEO_TXT[S.geoState]||S.geoState),
+    g?'Position : '+g.lat.toFixed(5)+', '+g.lon.toFixed(5)+' (précision environ '+g.acc+' m)':'Position : aucune',
+    'Navigateur : '+navigator.userAgent].join('\n');
+}
+function copyReport(){
+  var t=report();
+  var done=function(){S.copied='Rapport copié.';S.reportText='';render()};
+  var fb=function(){S.copied='';S.reportText=t;render()};
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).then(done,fb);
+    else fb();
+  }catch(e){fb()}
+}
+
+/* ---------- Carte (Leaflet + OpenStreetMap) ---------- */
+function ensureMap(){
+  if(MAP||!window.L)return MAP;
+  mapEl=document.createElement('div');mapEl.className='mapbox';
+  MAP=L.map(mapEl,{zoomControl:true});
+  MAP.setView([S.centre.lat,S.centre.lon],15);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© les contributeurs d’OpenStreetMap'}).addTo(MAP);
+  layers.me=L.layerGroup().addTo(MAP);
+  layers.veh=L.layerGroup().addTo(MAP);
+  MAP.on('click',function(e){
+    if(S.ride||S.tab!=='passager')return;
+    S.pin={lat:e.latlng.lat,lon:e.latlng.lng};S.pickMode='pin';
+    render();fitView();
+  });
+  return MAP;
+}
+function icon(cls,sz){return L.divIcon({className:'',html:'<div class="'+cls+'"></div>',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]})}
+function drawMap(){
+  if(!MAP)return;
+  layers.me.clearLayers();layers.veh.clearLayers();
+  var p=S.ride?S.ride.pickup:pickup();
+  if(p){
+    if(p.kind==='gps'&&p.acc)L.circle([p.lat,p.lon],{radius:p.acc,color:'#2a6fdb',weight:1,fillOpacity:0.1}).addTo(layers.me);
+    L.marker([p.lat,p.lon],{icon:icon(p.kind==='pin'?'pin':'gdot',22),interactive:false,keyboard:false}).addTo(layers.me);
+  }
+  var vs=[];
+  if(!S.ride)nearby(S.svc).forEach(function(n){vs.push(n.v)});
+  else if(S.ride.status==='requested')(S.ride.cands||[]).forEach(function(n){vs.push(n.v)});
+  else if(S.ride.status==='accepted'&&S.ride.near&&S.ride.driver&&S.ride.driver.ex)vs.push(S.ride.near.v);
+  vs.forEach(function(v){L.marker([v.lat,v.lon],{icon:icon('veh',16),interactive:false,keyboard:false}).addTo(layers.veh)});
+}
+function fitView(){
+  if(!MAP)return;
+  var pts=[],p=S.ride?S.ride.pickup:pickup();
+  if(p)pts.push([p.lat,p.lon]);
+  if(!S.ride)nearby(S.svc).forEach(function(n){pts.push([n.v.lat,n.v.lon])});
+  else if(S.ride.near&&S.ride.status!=='done')pts.push([S.ride.near.v.lat,S.ride.near.v.lon]);
+  try{
+    MAP.invalidateSize();
+    if(pts.length>1)MAP.fitBounds(pts,{padding:[30,30],maxZoom:17});
+    else if(pts.length===1)MAP.setView(pts[0],16);
+    else MAP.setView([S.centre.lat,S.centre.lon],15);
+  }catch(e){}
+  drawMap();
+}
+function attachMap(){
+  var slot=$('#mapslot');if(!slot)return;
+  if(!window.L){slot.innerHTML='<div class="notice">La carte ne peut pas se charger (connexion trop faible ou coupée). Le reste de l’application fonctionne.</div>';return}
+  ensureMap();
+  slot.appendChild(mapEl);
+  if(!mapReady){mapReady=true;setTimeout(fitView,0)}
+  else setTimeout(function(){try{MAP.invalidateSize()}catch(e){}drawMap()},0);
+}
+
+/* ---------- Vues ---------- */
+var ICON={
+  taxi:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 14l1.6-4.6A2 2 0 0 1 8.5 8h7a2 2 0 0 1 1.9 1.4L19 14"/><rect x="3" y="14" width="18" height="4.5" rx="1.5"/><circle cx="7.5" cy="18.5" r="1.4"/><circle cx="16.5" cy="18.5" r="1.4"/></svg>',
+  tri:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 16V9a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v7"/><path d="M9 11H5l-2 5h6"/><circle cx="5" cy="18" r="1.8"/><circle cx="13" cy="18" r="1.8"/><circle cx="19" cy="18" r="1.8"/></svg>',
+  inter:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h15M13 6l6 6-6 6"/></svg>'
+};
+
+function vHeader(){
+  var t=[['passager','Passager'],['chauffeur','Chauffeur'],['reglages','Réglages'],['lancement','Lancement']];
+  return '<header class="top"><div class="brand"><svg width="32" height="32" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 5c7 0 12 6 12 13s-5 10-12 10S4 25 4 18 9 5 16 5z" fill="var(--accent)"/><path d="M17 5c1-3 5-4 8-3-1 3-4 5-8 3z" fill="var(--forest)"/></svg><div><h1>Man-Go</h1><p>Taxis et tricycles de Man et sa région</p></div><span class="pill">Test</span></div>'+
+    '<div class="seg" role="tablist" aria-label="Choisir un espace">'+t.map(function(x){
+      return '<button type="button" role="tab" class="tab" data-act="tab" data-v="'+x[0]+'" aria-selected="'+(S.tab===x[0])+'">'+x[1]+'</button>';
+    }).join('')+'</div></header>';
+}
+
+function svcBtn(id,sub){
+  return '<button type="button" class="svc" data-act="svc" data-v="'+id+'" aria-pressed="'+(S.svc===id)+'">'+ICON[id]+'<b>'+SVC[id]+'</b><small>'+sub+'</small></button>';
+}
+
+function vWhere(){
+  var p=pickup(),msg;
+  if(S.geoState==='asking'&&!S.gps)msg='Recherche de votre position…';
+  else if(p&&p.kind==='gps')msg='Départ : votre position, précision environ '+p.acc+' m ('+accLabel(p.acc).toLowerCase()+').';
+  else if(p)msg='Départ : point choisi sur la carte.';
+  else msg=S.geoMsg||'Activez votre position pour voir les véhicules les plus proches de vous.';
+  var far='';
+  if(S.gps&&hav(S.gps,MAN)>25000)far='<p class="fine" style="margin:6px 0 0">Vous êtes à '+distLabel(hav(S.gps,MAN))+' du centre de Man. Les véhicules de démonstration sont placés autour de vous.</p>';
+  return '<div class="field"><span class="lab">Où êtes-vous ?</span>'+
+    '<div class="gpsrow"><button type="button" class="btn primary small" data-act="gps">Utiliser ma position</button>'+
+    (S.pin&&S.pickMode==='gps'?'<button type="button" class="btn ghost small" data-act="usepin">Point de la carte</button>':'')+'</div>'+
+    '<span class="fine" role="status">'+esc(msg)+'</span>'+far+'<span class="fine">Vous pouvez aussi toucher la carte pour placer le point de départ.</span></div>';
+}
+
+function vNear(){
+  var list=nearby(S.svc);
+  if(!list.length)return '';
+  var p=pickup();
+  return '<div><span class="lab">Véhicules à proximité '+(p?'de votre départ':'du centre de Man')+' <span class="tag" style="margin-left:6px">Démo</span></span><ul class="near" style="margin-top:8px">'+list.map(function(n){
+    return '<li><div class="ava" aria-hidden="true">'+esc(n.v.ini)+'</div><div class="t"><b>'+esc(n.v.name)+'</b><span>'+esc(n.v.veh)+' · ★ '+String(n.v.rate).replace('.',',')+'</span></div><div class="d">'+distLabel(n.m)+'<br>'+n.eta+' min</div></li>';
+  }).join('')+'</ul><p class="fine" style="margin:8px 0 0">Le chauffeur le plus proche reçoit votre demande en premier.</p></div>';
+}
+
+function vForm(){
+  var f=fare(S.svc,S.to);
+  var fromO=Object.keys(P).map(function(k){return opt(k,P[k].n,S.from)}).join('');
+  var toO=S.svc==='inter'
+    ?Object.keys(INTER).map(function(k){return opt(k,INTER[k].n,S.to)}).join('')
+    :Object.keys(P).filter(function(k){return k!==S.from}).map(function(k){return opt(k,P[k].n,S.to)}).join('');
+  var pays=Object.keys(PAY).map(function(k){return '<button type="button" class="chip" data-act="pay" data-v="'+k+'" aria-pressed="'+(S.pay===k)+'">'+PAY[k]+'</button>'}).join('');
+  var note=S.svc==='inter'&&INTER[S.to]
+    ?'<small>Prix habituel depuis Man : environ <span class="old">'+fmt(INTER[S.to].usual)+'</span> (estimation). Man-Go : −'+fmt(CFG.red)+'. Prix par course, pas par place.</small>'
+    :'<small>En ville, '+fmt(CFG.city)+' d’un quartier à un autre.</small>';
+  return '<section class="card form" aria-label="Commander une course">'+
+    '<div><span class="lab">Type de course</span><div class="svcs" style="margin-top:6px">'+svcBtn('taxi','En ville')+svcBtn('tri','En ville')+svcBtn('inter','Autres villes')+'</div></div>'+
+    vWhere()+
+    '<div class="field"><label for="from">Quartier de départ</label><select id="from" class="inp" data-bind="from">'+fromO+'</select></div>'+
+    '<div class="field"><label for="to">'+(S.svc==='inter'?'Ville de destination':'Quartier de destination')+'</label><select id="to" class="inp" data-bind="to">'+toO+'</select></div>'+
+    vNear()+
+    '<div class="row"><div class="field"><span class="lab">Passagers</span><div class="stepper"><button type="button" data-act="pax" data-v="-1" aria-label="Un passager de moins">−</button><output aria-live="polite">'+S.pax+'</output><button type="button" data-act="pax" data-v="1" aria-label="Un passager de plus">+</button></div><span class="fine">Maximum '+maxPax()+'</span></div></div>'+
+    '<div><span class="lab">Paiement à la fin de la course</span><div class="chips" style="margin-top:6px">'+pays+'</div></div>'+
+    '<div class="fare"><span>Prix Man-Go</span><strong>'+(f?fmt(f):'—')+'</strong>'+note+'</div>'+
+    '<button type="button" class="btn primary" data-act="order"'+(f?'':' disabled')+'>Commander la course</button>'+
+  '</section>'+
+  '<section class="card flat"><h3>Pas de smartphone ou pas de data ?</h3><p class="fine" style="margin:0">Appelez ou écrivez sur WhatsApp à la centrale Man-Go. Un opérateur enregistre la course pour vous.</p><p class="mono" style="margin:8px 0 0;font-size:17px">07 XX XX XX XX</p><p class="fine" style="margin:2px 0 0">Numéro à définir.</p></section>';
+}
+
+function sumRows(r){
+  return '<dl class="sum"><div><dt>Trajet</dt><dd>'+esc(r.fromN)+' → '+esc(r.toN)+'</dd></div>'+
+    (r.pickup?'<div><dt>Point de départ</dt><dd>'+esc(r.pickup.label)+'</dd></div>':'')+
+    '<div><dt>Passagers</dt><dd>'+r.pax+'</dd></div><div><dt>Paiement</dt><dd>'+PAY[r.pay]+'</dd></div><div><dt>Prix</dt><dd class="mono">'+fmt(r.fare)+'</dd></div></dl>';
+}
+function driverCard(d){
+  var sub=d.rate?('★ '+String(d.rate).replace('.',',')+' · '+d.trips+' courses'):'Nouveau chauffeur';
+  return '<div class="drv"><div class="ava" aria-hidden="true">'+esc(d.ini)+'</div><div class="drv-t"><b>'+esc(d.name)+'</b><span>'+esc(d.veh)+(d.plate?' · '+esc(d.plate):'')+'</span><span>'+sub+'</span></div>'+(d.ex?'<span class="tag">Démo</span>':'')+'</div>';
+}
+
+function vRide(r){
+  var steps=['Demande','Chauffeur','En route','Arrivée'];
+  var idx={requested:0,accepted:1,arrived:1,ontrip:2,done:3}[r.status];
+  var sh='<ol class="steps">'+steps.map(function(s,i){return '<li class="'+(i<idx?'done':i===idx?'cur':'')+'"'+(i===idx?' aria-current="step"':'')+'>'+s+'</li>'}).join('')+'</ol>';
+  var H={
+    requested:['Recherche d’un chauffeur',r.near?'Le véhicule le plus proche est à '+distLabel(r.near.m)+'. Il reçoit votre demande.':'Les chauffeurs en ligne reçoivent votre demande.'],
+    accepted:['Votre chauffeur arrive','Arrivée dans environ '+r.eta+' min.'],
+    arrived:['Votre chauffeur est arrivé','Donnez-lui votre code de course.'],
+    ontrip:['En route vers '+r.toN,'Bon trajet.'],
+    done:['Course terminée','Merci d’avoir utilisé Man-Go.']
+  }[r.status];
+  var head='<div class="stat">'+(r.status==='requested'?'<div class="spin" aria-hidden="true"></div>':'')+'<div><h2>'+esc(H[0])+'</h2><p class="fine" style="margin:0">'+esc(H[1])+'</p></div></div>';
+  var h='<div id="mapslot"></div><section class="card" style="display:flex;flex-direction:column;gap:14px">'+sh+head;
+  if(r.driver)h+=driverCard(r.driver);
+  if(r.status==='accepted'||r.status==='arrived')h+='<div class="code"><span class="lab">Code de course</span><strong>'+r.code+'</strong><p>Donnez ce code au chauffeur quand vous montez. Vous êtes sûr de monter dans le bon véhicule.</p></div>';
+  h+=sumRows(r);
+  if(r.status==='done'){
+    h+='<div><span class="lab">Notez votre chauffeur</span><div class="stars" role="group" aria-label="Note sur 5">'+[1,2,3,4,5].map(function(n){return '<button type="button" data-act="rate" data-v="'+n+'" aria-label="'+n+' sur 5" aria-pressed="'+(r.rating>=n)+'">★</button>'}).join('')+'</div>'+(r.rating?'<p class="fine" style="margin:0">Merci pour votre note.</p>':'')+'</div>';
+    h+='<button type="button" class="btn primary" data-act="newride">Nouvelle course</button>';
+  }else if(r.status!=='ontrip'){
+    h+='<button type="button" class="btn ghost" data-act="cancel">Annuler la course</button>';
+  }
+  return h+'</section>';
+}
+
+function vPassenger(){
+  if(S.ride)return '<div class="stack">'+vRide(S.ride)+'</div>';
+  return '<div class="stack"><div id="mapslot"></div>'+vForm()+'</div>';
+}
+
+/* ---------- Chauffeur ---------- */
+function reqCard(q,mine){
+  return '<article class="card req"><div class="head"><span class="tag'+(mine?' hot':'')+'">'+(mine?'Votre démo passager':SVC[q.svc])+'</span><span class="price">'+fmt(q.fare)+'</span></div>'+
+    '<div class="rt">'+esc(q.fromN)+' → '+esc(q.toN)+'</div>'+
+    '<div class="meta">'+q.pax+' passager'+(q.pax>1?'s':'')+' · '+PAY[q.pay]+(q.dist?' · à '+q.dist+' m de vous':'')+'</div>'+
+    '<div class="btns"><button type="button" class="btn primary" data-act="accept" data-v="'+q.id+'">Accepter</button>'+(mine?'':'<button type="button" class="btn ghost" data-act="skip" data-v="'+q.id+'">Passer</button>')+'</div></article>';
+}
+
+function vJob(){
+  var j=S.job,pn=j.src==='demo'?j.name:'Passager démo (vous)';
+  var T2={accepted:'Allez chercher '+pn,arrived:'Demandez le code de course',ontrip:'Course en cours',done:'Course terminée'}[j.status];
+  var h='<section class="card" style="display:flex;flex-direction:column;gap:14px"><div><p class="eyebrow">Course en cours</p><h2>'+esc(T2)+'</h2></div>'+sumRows(j);
+  if(j.status==='accepted')h+='<button type="button" class="btn primary" data-act="arrived">Je suis arrivé au départ</button>';
+  if(j.status==='arrived'){
+    h+='<div class="field"><label for="codeIn">Code donné par le passager</label><input id="codeIn" class="inp mono" inputmode="numeric" maxlength="4" autocomplete="off" data-form="codeIn" value="'+esc(S.form.codeIn||'')+'">'+
+      (S.codeErr?'<p class="err" role="alert">Ce code ne correspond pas. Vérifiez avec le passager.</p>':'')+
+      '<span class="fine">Test : le code est '+j.code+'.</span></div><button type="button" class="btn primary" data-act="start">Démarrer la course</button>';
+  }
+  if(j.status==='ontrip')h+='<button type="button" class="btn forest" data-act="finish">Terminer et encaisser '+fmt(j.fare)+'</button>';
+  if(j.status==='done')h+='<p style="margin:0">Vous avez gagné <b class="mono">'+fmt(j.fare)+'</b>.</p><button type="button" class="btn primary" data-act="next">Continuer</button>';
+  return h+'</section>';
+}
+
+function vRegister(){
+  if(S.reg){
+    var r=S.reg;
+    return '<section class="card"><p class="eyebrow">Inscription</p><h3>Dossier reçu, en vérification</h3>'+
+      '<dl class="sum"><div><dt>Nom</dt><dd>'+esc(r.name)+'</dd></div><div><dt>Véhicule</dt><dd>'+(r.veh==='tri'?'Tricycle':'Taxi communal')+'</dd></div>'+(r.plate?'<div><dt>Plaque</dt><dd>'+esc(r.plate)+'</dd></div>':'')+(r.station?'<div><dt>Station</dt><dd>'+esc(r.station)+'</dd></div>':'')+'<div><dt>Hors ville</dt><dd>'+(r.inter?'Oui':'Non')+'</dd></div></dl>'+
+      '<p class="fine" style="margin:10px 0">Dans la vraie version, l’équipe Man-Go vérifie le permis, la carte grise et l’assurance avant d’activer le compte.</p>'+
+      '<button type="button" class="btn ghost" data-act="editreg">Modifier mon dossier</button></section>';
+  }
+  var F=S.form;
+  return '<section class="card"><p class="eyebrow">Inscription</p><h3>Devenir chauffeur Man-Go</h3><p class="fine">Inscription gratuite. Aucune commission pendant l’offre de lancement.</p>'+
+    '<form id="regForm" class="form" novalidate>'+
+    '<div class="field"><label for="rn">Nom complet</label><input id="rn" class="inp" type="text" autocomplete="name" data-form="rn" value="'+esc(F.rn||'')+'"></div>'+
+    '<div class="field"><label for="rp">Téléphone</label><input id="rp" class="inp" type="tel" inputmode="tel" autocomplete="tel" placeholder="07 XX XX XX XX" data-form="rp" value="'+esc(F.rp||'')+'"></div>'+
+    '<div class="row"><div class="field"><label for="rv">Véhicule</label><select id="rv" class="inp" data-form="rv"><option value="taxi"'+(F.rv==='tri'?'':' selected')+'>Taxi communal</option><option value="tri"'+(F.rv==='tri'?' selected':'')+'>Tricycle</option></select></div>'+
+    '<div class="field"><label for="rpl">Plaque</label><input id="rpl" class="inp" type="text" autocapitalize="characters" data-form="rpl" value="'+esc(F.rpl||'')+'"></div></div>'+
+    '<div class="field"><label for="rs">Station ou syndicat d’attache</label><input id="rs" class="inp" type="text" data-form="rs" value="'+esc(F.rs||'')+'"></div>'+
+    '<label style="display:flex;gap:10px;align-items:center;min-height:44px"><input id="rh" type="checkbox" data-form="rh"'+(F.rh?' checked':'')+' style="width:22px;height:22px"> J’accepte les courses hors de la ville</label>'+
+    '<p class="fine" style="margin:0">Pièces demandées dans la vraie version : permis, carte grise, assurance, pièce d’identité.</p>'+
+    (S.regErr?'<p class="err" role="alert">'+esc(S.regErr)+'</p>':'')+
+    '<button type="submit" class="btn primary">Envoyer mon dossier</button></form></section>';
+}
+
+function vDriver(){
+  var mineReq=(S.ride&&S.ride.status==='requested')?[S.ride]:[];
+  var gtxt=S.gps?'Position : précision environ '+S.gps.acc+' m ('+accLabel(S.gps.acc).toLowerCase()+'). Elle reste sur votre téléphone dans cette version de test.':
+    (S.geoState==='asking'?'Recherche de votre position…':(S.geoMsg||'Votre position n’est pas encore activée.'));
+  var h='<div class="stack">';
+  h+='<section class="card"><div class="top-row"><div><p class="eyebrow" style="margin-bottom:4px">Espace chauffeur</p><h2 style="margin:0">'+(S.online?'Vous recevez des courses':'Vous êtes hors ligne')+'</h2></div>'+
+    '<button type="button" class="switch" role="switch" aria-checked="'+S.online+'" data-act="online"'+(S.job?' disabled':'')+'><span class="knob"></span><span>'+(S.online?'En ligne':'Hors ligne')+'</span></button></div>'+
+    '<p class="fine" style="margin:10px 0 0" role="status">'+esc(gtxt)+'</p></section>';
+  h+='<section class="card"><div class="earn"><div><span>Gains du jour</span><strong>'+fmt(S.earn.t)+'</strong></div><div><span>Courses</span><strong>'+S.earn.n+'</strong></div></div>'+
+    '<p class="fine" style="margin:10px 0 0">Commission Man-Go : 0 % pendant l’offre de lancement. Vous gardez tout le prix de la course.</p></section>';
+  if(S.notice)h+='<div class="notice" role="status">'+esc(S.notice)+'</div>';
+  if(S.job)h+=vJob();
+  else if(S.online){
+    var list=mineReq.map(function(q){return reqCard(q,true)}).concat(S.requests.map(function(q){return reqCard(q,false)}));
+    h+=list.length?'<h3 style="margin:4px 0 0">Demandes autour de vous</h3>'+list.join(''):'<div class="notice">Aucune demande pour le moment. La prochaine arrive bientôt.</div>';
+    h+='<p class="fine">Les demandes avec une étiquette de type de course sont simulées. Commandez une course dans l’espace Passager pour la voir apparaître ici.</p>';
+  }else h+='<div class="notice">Passez en ligne pour recevoir les demandes de passagers. Le navigateur vous demandera alors l’accès à votre position.</div>';
+  h+=vRegister()+'</div>';
+  return h;
+}
+
+/* ---------- Réglages : GPS, installation, tarifs ---------- */
+function vGeo(){
+  var g=S.gps,secure=!!window.isSecureContext;
+  var rows='<div><dt>Adresse sécurisée (https)</dt><dd>'+(secure?'Oui':'Non')+'</dd></div>'+
+    '<div><dt>Autorisation</dt><dd>'+permLabel()+'</dd></div>'+
+    '<div><dt>État du GPS</dt><dd>'+(GEO_TXT[S.geoState]||S.geoState)+'</dd></div>';
+  if(g){
+    var t=new Date(g.ts);
+    rows+='<div><dt>Latitude</dt><dd class="mono">'+g.lat.toFixed(5)+'</dd></div><div><dt>Longitude</dt><dd class="mono">'+g.lon.toFixed(5)+'</dd></div>'+
+      '<div><dt>Précision</dt><dd>± '+g.acc+' m ('+accLabel(g.acc).toLowerCase()+')</dd></div>'+
+      '<div><dt>Dernière mise à jour</dt><dd class="mono">'+pad2(t.getHours())+':'+pad2(t.getMinutes())+':'+pad2(t.getSeconds())+'</dd></div>'+
+      '<div><dt>Distance du centre de Man</dt><dd>'+distLabel(hav(g,MAN))+'</dd></div>'+
+      (g.speed!==null&&g.speed!==undefined&&!isNaN(g.speed)?'<div><dt>Vitesse</dt><dd>'+Math.round(g.speed*3.6)+' km/h</dd></div>':'');
+  }
+  return '<section class="card"><p class="eyebrow">Test du GPS</p><h2>Localisation de votre téléphone</h2>'+
+    '<p class="fine">Une précision de 30 m ou moins est bonne. Autour de 100 m ou plus, le téléphone utilise seulement le réseau mobile : sortez à l’air libre et attendez quelques secondes.</p>'+
+    '<dl class="sum" style="margin:10px 0">'+rows+'</dl>'+
+    (S.geoMsg?'<p class="'+(S.geoState==='ok'?'fine':'err')+'" role="status">'+esc(S.geoMsg)+'</p>':'')+
+    '<div class="btns" style="margin-top:10px"><button type="button" class="btn primary" data-act="gps">Activer ma position</button>'+
+    (WATCH!==null?'<button type="button" class="btn ghost" data-act="stopgps">Arrêter</button>':'')+
+    '<button type="button" class="btn ghost" data-act="copyrep">Copier le rapport</button></div>'+
+    (S.copied?'<p class="fine" style="margin:8px 0 0" role="status">'+esc(S.copied)+'</p>':'')+
+    (S.reportText?'<div class="field" style="margin-top:10px"><label for="rep">Rapport à copier (sélectionnez tout le texte)</label><textarea id="rep" class="inp rep" readonly>'+esc(S.reportText)+'</textarea></div>':'')+
+  '</section>';
+}
+
+function standalone(){
+  try{return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||window.navigator.standalone===true}catch(e){return false}
+}
+function vInstall(){
+  var h='<section class="card"><p class="eyebrow">Installation</p><h2>Ajouter à l’écran d’accueil</h2>';
+  if(standalone()||S.installed)h+='<p>Man-Go est installé sur ce téléphone. Vous l’ouvrez comme une application.</p>';
+  else{
+    h+='<p>Installez Man-Go pour l’ouvrir comme une application, sans la barre du navigateur.</p>';
+    if(S.installEv)h+='<button type="button" class="btn primary" data-act="install">Installer Man-Go</button>';
+    else h+='<p class="fine" style="margin:0">Avec Chrome sur Android : touchez les trois points en haut à droite, puis « Installer l’application » ou « Ajouter à l’écran d’accueil ». Le site doit être ouvert depuis son adresse en https.</p>';
+  }
+  return h+'</section>';
+}
+
+function vSettings(){
+  var rows=CFG.t.map(function(t,i){
+    return '<tr><td>'+esc(t.n)+'</td><td><input class="inp num" inputmode="numeric" aria-label="Tarif habituel pour '+esc(t.n)+'" data-cfg="t:'+i+'" value="'+t.u+'"></td><td class="mono"><b>'+fmt(Math.max(500,t.u-CFG.red))+'</b></td>'+
+      '<td><button type="button" class="btn ghost small" data-act="deltown" data-v="'+i+'" aria-label="Supprimer '+esc(t.n)+'">×</button></td></tr>';
+  }).join('');
+  return '<div class="stack">'+vGeo()+vInstall()+
+  '<section class="card"><p class="eyebrow">Tarifs</p><h2>Tarifs hors ville</h2>'+
+  '<p>Entrez le prix que les chauffeurs demandent habituellement depuis Man. Man-Go affiche ce prix moins la réduction.</p>'+
+  '<p class="fine">Les prix de départ sont des estimations. Je n’ai trouvé aucune source fiable qui donne les vrais tarifs. Relevez-les à la gare routière auprès de chauffeurs qui font ces trajets.</p>'+
+  '<div class="row" style="margin-top:12px"><div class="field"><label for="red">Réduction Man-Go (FCFA, minimum 500)</label><input id="red" class="inp num" inputmode="numeric" data-cfg="red" value="'+CFG.red+'"></div>'+
+  '<div class="field"><label for="city">Course en ville (FCFA)</label><input id="city" class="inp num" inputmode="numeric" data-cfg="city" value="'+CFG.city+'"></div></div></section>'+
+  '<section class="card"><h3>Villes desservies</h3><div class="tbl"><table><thead><tr><th>Ville</th><th>Tarif habituel</th><th>Tarif Man-Go</th><th><span class="sr">Supprimer</span></th></tr></thead><tbody>'+rows+'</tbody></table></div>'+
+  '<form id="townForm" class="form" style="margin-top:14px" novalidate><h3 style="margin:0">Ajouter une ville</h3><div class="row"><div class="field"><label for="tn">Nom de la ville</label><input id="tn" class="inp" type="text" data-form="tn" value="'+esc(S.form.tn||'')+'"></div>'+
+  '<div class="field"><label for="tu">Tarif habituel (FCFA)</label><input id="tu" class="inp num" inputmode="numeric" data-form="tu" value="'+esc(S.form.tu||'')+'"></div></div>'+
+  (S.townErr?'<p class="err" role="alert">'+esc(S.townErr)+'</p>':'')+'<button type="submit" class="btn primary">Ajouter la ville</button></form></section>'+
+  '<section class="card"><h3>Quartiers de Man</h3><p class="fine">Une ligne par quartier. La liste de départ est incomplète : complétez-la avec tous les quartiers de la ville.</p>'+
+  '<div class="field"><label for="qs">Liste des quartiers</label><textarea id="qs" class="inp" data-cfg="q">'+esc(CFG.q.join('\n'))+'</textarea></div>'+
+  '<p class="fine" style="margin:8px 0 0">La liste est enregistrée quand vous quittez le champ.</p></section>'+
+  '<div class="btns"><button type="button" class="btn ghost" data-act="defcfg">Remettre les valeurs de départ</button></div></div>';
+}
+
+/* ---------- Lancement ---------- */
+function vLaunch(){
+  return '<div class="stack">'+
+  '<section class="card"><p class="eyebrow">Plan de lancement à Man</p><h2>Les chauffeurs d’abord, les passagers ensuite</h2>'+
+  '<p>Un passager doit trouver un chauffeur vite, sinon il ne revient pas. Commencez petit, sur quelques lieux de départ, avec assez de chauffeurs pour que chaque demande soit prise.</p>'+
+  '<div class="goals"><div><strong>30</strong><span>chauffeurs vérifiés</span></div><div><strong>2</strong><span>lieux de départ : gare et marché</span></div><div><strong>300</strong><span>passagers inscrits</span></div></div>'+
+  '<p class="fine" style="margin:0">Objectifs proposés pour les 90 premiers jours. À ajuster après les premières semaines.</p></section>'+
+
+  '<details class="acc" open><summary>Recruter les chauffeurs</summary><div class="in"><ol>'+
+  '<li>Rencontrez d’abord les responsables des stations et des syndicats de taxis et de tricycles de Man. Leur accord vaut plus que n’importe quelle publicité.</li>'+
+  '<li>Proposez une offre simple : inscription gratuite et 0 % de commission pendant 3 mois.</li>'+
+  '<li>Relevez avec eux les prix habituels vers Biankouma, Facobly, Logoualé, Guiglo et les autres villes, puis saisissez-les dans l’onglet Réglages.</li>'+
+  '<li>Inscrivez les chauffeurs sur place, à la gare, en 10 minutes. Aidez-les à installer l’application sur leur téléphone.</li>'+
+  '<li>Collez un autocollant Man-Go avec un code QR sur chaque véhicule inscrit. C’est votre publicité gratuite.</li>'+
+  '<li>Créez un groupe WhatsApp des chauffeurs pour le support et les retours.</li></ol></div></details>'+
+
+  '<details class="acc"><summary>Attirer les passagers</summary><div class="in"><ol>'+
+  '<li>Annoncez le prix simple : 500 FCFA en ville, et 500 FCFA de moins que le tarif habituel hors ville.</li>'+
+  '<li>Commencez là où la demande est forte : gare routière, marché, CHR, étudiants et lycéens.</li>'+
+  '<li>Permettez de commander par appel ou WhatsApp pour les clients sans smartphone ni data.</li>'+
+  '<li>Ajoutez un code de parrainage : une course offerte pour celui qui invite et celui qui est invité.</li>'+
+  '<li>Affichez à la gare et au marché, et passez une annonce à la radio locale.</li>'+
+  '<li>Mettez la sécurité en avant : code de course, plaque affichée, chauffeur vérifié.</li></ol>'+
+  '<p class="fine" style="margin:10px 0 0">Calculez avec les chauffeurs si ces prix leur laissent un revenu correct. Une course en ville à 500 FCFA et un tarif réduit de 500 FCFA hors ville baissent leurs recettes par rapport à aujourd’hui.</p></div></details>'+
+
+  '<details class="acc"><summary>À confirmer avant de lancer</summary><div class="in"><ul>'+
+  '<li><span class="badge">À confirmer</span>Les tarifs habituels de chaque trajet, auprès des chauffeurs.</li>'+
+  '<li><span class="badge">À confirmer</span>La liste complète des quartiers de Man.</li>'+
+  '<li><span class="badge">À confirmer</span>Les autorisations nécessaires auprès de la mairie de Man et des autorités du transport, notamment pour les courses hors commune avec des taxis communaux.</li>'+
+  '<li><span class="badge">À confirmer</span>L’assurance des passagers et les pièces exigées des chauffeurs.</li>'+
+  '<li><span class="badge">À confirmer</span>Les règles de protection des données personnelles (numéros de téléphone, position GPS).</li>'+
+  '<li><span class="badge">À confirmer</span>Les comptes marchands pour recevoir les paiements Wave, Orange Money et MTN MoMo.</li></ul>'+
+  '<p class="fine" style="margin:10px 0 0">Je ne peux pas confirmer ces points avec certitude. Vérifiez-les auprès des sources officielles.</p></div></details>'+
+
+  '<details class="acc"><summary>Ce que cette version de test fait ou non</summary><div class="in"><div class="tbl"><table><thead><tr><th>Dans ce test</th><th>Pour la vraie version</th></tr></thead><tbody>'+
+  '<tr><td>Votre vraie position GPS et une vraie carte</td><td>Identique</td></tr>'+
+  '<tr><td>Véhicules et chauffeurs simulés autour de vous</td><td>Vrais chauffeurs, positions envoyées en direct</td></tr>'+
+  '<tr><td>Données gardées sur votre téléphone</td><td>Base de données en ligne partagée</td></tr>'+
+  '<tr><td>Choix du paiement seulement</td><td>Connexion à Wave, Orange Money, MTN MoMo</td></tr>'+
+  '<tr><td>Aucune notification</td><td>Alertes aux chauffeurs par notification ou SMS</td></tr>'+
+  '<tr><td>Carte OpenStreetMap, usage léger</td><td>Fournisseur de cartes adapté à un vrai trafic</td></tr></tbody></table></div></div></details>'+
+
+  '<div class="btns"><button type="button" class="btn ghost" data-act="reset">Réinitialiser le test</button></div>'+
+  '<p class="fine">Version de test. Les chauffeurs, les véhicules, les numéros et les tarifs de départ sont des exemples.</p></div>';
+}
+
+/* ---------- Rendu ---------- */
+function render(){
+  var ae=document.activeElement,key=null;
+  if(ae&&ae!==document.body){
+    if(ae.id)key='#'+ae.id;
+    else if(ae.getAttribute&&ae.getAttribute('data-act'))key='[data-act="'+ae.getAttribute('data-act')+'"][data-v="'+(ae.getAttribute('data-v')||'')+'"]';
+  }
+  var v=S.tab==='passager'?vPassenger():S.tab==='chauffeur'?vDriver():S.tab==='reglages'?vSettings():vLaunch();
+  $('#app').innerHTML=vHeader()+v;
+  if(key){var el=$('#app').querySelector(key);if(el&&el.focus){try{el.focus({preventScroll:true})}catch(x){}}}
+  attachMap();
+}
+function softRender(){
+  var a=document.activeElement;
+  if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)){setTimeout(softRender,1500);return}
+  render();
+}
+
+/* ---------- Logique ---------- */
+var DELAY={requested:4500,accepted:7000,arrived:5000,ontrip:8000};
+var RIDE_MSG={accepted:'Votre chauffeur arrive.',arrived:'Votre chauffeur est arrivé.',ontrip:'Course en cours.',done:'Course terminée.'};
+function auto(){
+  clearTimeout(T);
+  var r=S.ride;if(!r||r.sample===false)return;
+  var d=DELAY[r.status];if(!d)return;
+  var st=r.status,id=r.id;
+  T=setTimeout(function(){
+    if(!S.ride||S.ride.id!==id||S.ride.status!==st||S.ride.sample===false)return;
+    if(st==='requested'){
+      var n=r.near||{v:me(r.svc),m:0,eta:4};
+      r.driver=n.v;r.sample=true;r.eta=n.eta;r.status='accepted';
+    }
+    else if(st==='accepted')r.status='arrived';
+    else if(st==='arrived')r.status='ontrip';
+    else if(st==='ontrip')r.status='done';
+    announce(RIDE_MSG[r.status]||'');
+    softRender();auto();
+  },d);
+}
+function order(){
+  var f=fare(S.svc,S.to);if(!f)return;
+  var c=nearby(S.svc);
+  S.ride={id:Date.now(),svc:S.svc,from:S.from,to:S.to,fromN:P[S.from].n,toN:placeName(S.svc,S.to),pax:S.pax,pay:S.pay,fare:f,
+    code:rnd(1000,9999),status:'requested',driver:null,sample:undefined,rating:0,src:'mine',pickup:pickup(),cands:c,near:c[0]||null};
+  announce('Demande envoyée au véhicule le plus proche.');
+  render();fitView();auto();window.scrollTo(0,0);
+}
+function cancel(){
+  if(!S.ride)return;
+  if(S.job===S.ride){S.job=null;S.notice='Le passager a annulé la course.'}
+  clearTimeout(T);S.ride=null;announce('Course annulée.');render();fitView();
+}
+function setOnline(on){
+  S.online=on;clearInterval(IV);
+  if(on){
+    S.notice='';S.requests=[demoReq(),demoReq()];
+    if(WATCH===null&&S.perm!=='denied')startGeo();
+    IV=setInterval(function(){
+      if(!S.online||S.job)return;
+      if(S.requests.length<4)S.requests.push(demoReq());
+      if(S.tab==='chauffeur')softRender();
+    },12000);
+  }else S.requests=[];
+}
+function accept(id){
+  if(S.job)return;
+  S.notice='';
+  if(S.ride&&String(S.ride.id)===String(id)&&S.ride.status==='requested'){
+    clearTimeout(T);
+    var r=S.ride;r.status='accepted';r.sample=false;r.driver=me(r.svc);r.eta=rnd(2,6);r.near=null;S.job=r;
+    announce('Un chauffeur a accepté votre course.');
+  }else{
+    var q=S.requests.filter(function(x){return x.id===id})[0];if(!q)return;
+    S.requests=S.requests.filter(function(x){return x.id!==id});
+    S.job=Object.assign({},q,{status:'accepted',code:rnd(1000,9999)});
+  }
+  S.form.codeIn='';S.codeErr=false;render();
+}
+function startTrip(){
+  var j=S.job;if(!j)return;
+  if(String(S.form.codeIn||'').trim()===String(j.code)){j.status='ontrip';S.codeErr=false;S.form.codeIn='';announce('Course démarrée.')}
+  else S.codeErr=true;
+  render();
+}
+function finish(){
+  var j=S.job;if(!j)return;
+  j.status='done';
+  if(!j.paid){j.paid=true;S.earn.t+=j.fare;S.earn.n+=1}
+  announce('Course terminée. Gains ajoutés.');render();
+}
+function submitReg(){
+  var F=S.form,name=(F.rn||'').trim(),ph=(F.rp||'').replace(/\D/g,'');
+  if(name.length<3){S.regErr='Entrez votre nom complet.';render();return}
+  if(ph.length<10){S.regErr='Entrez un numéro de téléphone à 10 chiffres.';render();return}
+  S.reg={name:name,phone:(F.rp||'').trim(),veh:F.rv||'taxi',plate:(F.rpl||'').trim(),station:(F.rs||'').trim(),inter:!!F.rh};
+  save(S.reg);S.regErr='';announce('Dossier envoyé.');render();
+}
+function reset(){
+  clearTimeout(T);clearInterval(IV);
+  S.ride=null;S.job=null;S.online=false;S.requests=[];S.earn={t:0,n:0};S.notice='';S.codeErr=false;S.pin=null;S.pickMode='gps';makeFleet();
+  announce('Test réinitialisé.');render();fitView();
+}
+function applyCfg(){saveCfg();rebuild();fixFrom();fixTo();render()}
+function cfgChange(k,v){
+  if(k==='red')CFG.red=Math.max(500,num(v)||500);
+  else if(k==='city')CFG.city=num(v)>=100?num(v):500;
+  else if(k==='q'){
+    var seen={},names=[];
+    String(v).split(/\r?\n/).forEach(function(x){x=x.trim();var s=slug(x);if(x&&!seen[s]){seen[s]=1;names.push(x)}});
+    if(names.length<2){announce('Gardez au moins deux quartiers.');render();return}
+    CFG.q=names;
+  }else if(k.indexOf('t:')===0){
+    var i=parseInt(k.slice(2),10);
+    if(CFG.t[i]&&num(v)>0)CFG.t[i].u=num(v);
+  }
+  applyCfg();
+}
+function addTown(){
+  var n=(S.form.tn||'').trim(),u=num(S.form.tu);
+  if(n.length<2){S.townErr='Entrez le nom de la ville.';render();return}
+  if(u<1000){S.townErr='Entrez le tarif habituel en FCFA (au moins 1 000).';render();return}
+  if(CFG.t.some(function(t){return slug(t.n)===slug(n)})){S.townErr='Cette ville existe déjà.';render();return}
+  CFG.t.push({n:n,u:u});S.form.tn='';S.form.tu='';S.townErr='';applyCfg();
+}
+function doInstall(){
+  var ev=S.installEv;if(!ev)return;
+  try{ev.prompt();ev.userChoice.then(function(c){S.installEv=null;if(c&&c.outcome==='accepted')S.installed=true;render()},function(){})}catch(e){}
+}
+
+function act(a,v){
+  switch(a){
+    case 'tab':S.tab=v;render();window.scrollTo(0,0);break;
+    case 'svc':S.svc=v;fixTo();if(S.pax>maxPax())S.pax=maxPax();render();fitView();break;
+    case 'pax':S.pax=Math.max(1,Math.min(maxPax(),S.pax+Number(v)));render();break;
+    case 'pay':S.pay=v;render();break;
+    case 'gps':S.pickMode='gps';S.copied='';startGeo();if(S.gps)fitView();break;
+    case 'stopgps':stopGeo(false);break;
+    case 'usepin':S.pickMode='pin';render();fitView();break;
+    case 'copyrep':copyReport();break;
+    case 'install':doInstall();break;
+    case 'order':order();break;
+    case 'cancel':cancel();break;
+    case 'rate':if(S.ride){S.ride.rating=Number(v);render()}break;
+    case 'newride':S.ride=null;render();fitView();break;
+    case 'online':if(!S.job){setOnline(!S.online);render()}break;
+    case 'accept':accept(v);break;
+    case 'skip':S.requests=S.requests.filter(function(x){return x.id!==v});render();break;
+    case 'arrived':if(S.job){S.job.status='arrived';announce('Arrivé au départ.');render()}break;
+    case 'start':startTrip();break;
+    case 'finish':finish();break;
+    case 'next':S.job=null;render();break;
+    case 'editreg':
+      S.form={rn:S.reg.name,rp:S.reg.phone,rv:S.reg.veh,rpl:S.reg.plate,rs:S.reg.station,rh:S.reg.inter,codeIn:S.form.codeIn};
+      S.reg=null;render();break;
+    case 'deltown':
+      if(CFG.t.length>1){CFG.t.splice(Number(v),1);applyCfg()}break;
+    case 'defcfg':CFG=defCfg();applyCfg();break;
+    case 'reset':reset();break;
+  }
+}
+
+document.addEventListener('click',function(e){
+  var b=e.target.closest('[data-act]');
+  if(!b||b.disabled)return;
+  act(b.getAttribute('data-act'),b.getAttribute('data-v'));
+});
+document.addEventListener('change',function(e){
+  var t=e.target,k=t.getAttribute('data-bind'),f=t.getAttribute('data-form'),c=t.getAttribute('data-cfg');
+  if(k){S[k]=t.value;if(k==='from')fixTo();render()}
+  if(f)S.form[f]=t.type==='checkbox'?t.checked:t.value;
+  if(c)cfgChange(c,t.value);
+});
+document.addEventListener('input',function(e){
+  var f=e.target.getAttribute('data-form');
+  if(f)S.form[f]=e.target.value;
+});
+document.addEventListener('submit',function(e){
+  e.preventDefault();
+  if(e.target.id==='regForm')submitReg();
+  if(e.target.id==='townForm')addTown();
+});
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();S.installEv=e;softRender()});
+window.addEventListener('appinstalled',function(){S.installEv=null;S.installed=true;softRender()});
+
+if('serviceWorker' in navigator&&location.protocol==='https:'){
+  window.addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})});
+}
+
+makeFleet();
+watchPerm();
+render();
+})();
+</script>
+</body>
+</html>
