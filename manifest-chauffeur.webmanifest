@@ -1,0 +1,27 @@
+{
+  "id": "mango-chauffeur",
+  "name": "Man-Go Chauffeur",
+  "short_name": "Man-Go Pro",
+  "description": "Application des chauffeurs Man-Go : inscription et courses à Man.",
+  "lang": "fr",
+  "start_url": "chauffeur.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#EBEFE8",
+  "theme_color": "#15201A",
+  "icons": [
+    {
+      "src": "icon-chauffeur-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-chauffeur-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

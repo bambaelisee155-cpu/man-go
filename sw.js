@@ -1,7 +1,7 @@
 /* Service worker de Man-Go : permet l'installation et garde l'application en cache.
    Réseau d'abord pour les fichiers du site, afin que chaque mise à jour apparaisse tout de suite pendant les tests. */
-var CACHE = 'mango-v1';
-var SHELL = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+var CACHE = 'mango-v3';
+var SHELL = ['./', 'index.html', 'chauffeur.html', 'gestion.html', 'manifest.webmanifest', 'manifest-chauffeur.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-chauffeur-192.png', 'icon-chauffeur-512.png'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));
